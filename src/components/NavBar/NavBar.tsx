@@ -4,7 +4,10 @@ import Menu from "../../../assets/Menu.svg?react";
 
 function NavBar() {
   return (
-    <nav className="fixed bottom-0 left-0 z-50 w-full bg-slate-950">
+    <nav
+      className="fixed bottom-0 left-0 z-50 w-full"
+      style={{ backgroundColor: "rgba(18, 22, 26, 1)" }}
+    >
       <ul className="h-[84px] flex flex-row justify-between">
         <li className="flex flex-col w-full mt-2 items-center">
           <Mining />
