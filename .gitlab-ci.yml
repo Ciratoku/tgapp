@@ -1,0 +1,67 @@
+include:
+  - project: "devops/deusflow/gitlab-includes/docker-build"
+    ref: "main"
+    file: "build-dind.yml"
+
+stages:
+  - build
+  - to test
+
+build frontend:
+  stage: build
+  variables:
+    DOCKERDIR: "${CI_PROJECT_DIR}"
+  extends:
+    - .docker_build_dind
+
+.deploy_dev:
+  image: alpine
+  variables:
+    # DOCKER_HOST: "ssh://${DEPLOY_HOST}"
+    DEPLOY_USER: deploy
+    REGISTRY: ${CI_REGISTRY}
+    REGISTRY_USER: ${CI_REGISTRY_USER}
+    REGISTRY_PASSWORD: ${CI_REGISTRY_PASSWORD}
+  before_script:
+    - which ssh-agent || ( apk --update add openssh-client )
+    - eval $(ssh-agent -s)
+    - chmod 400 "$SSH_PRIVATE_KEY"
+    - ssh-add "$SSH_PRIVATE_KEY"
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - "[[ -f /.dockerenv ]] && touch ~/.ssh/config && chmod 644 ~/.ssh/config"
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\tUser ${DEPLOY_USER}\n\n" >> ~/.ssh/config'
+    - echo "$REGISTRY_PASSWORD" | ssh ${DEPLOY_USER}@${DEPLOY_HOST} "docker login -u "$REGISTRY_USER" --password-stdin $REGISTRY"
+  tags:
+    - docker
+
+frontend deploy to dev:
+  stage: to test
+  extends:
+    - .deploy_dev
+  script:
+    - ssh ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p /home/${DEPLOY_USER}/frontend"
+    - scp compose.yaml ${DEPLOY_USER}@${DEPLOY_HOST}:/home/${DEPLOY_USER}/frontend/
+    - scp ${ENVFILE} ${DEPLOY_USER}@${DEPLOY_HOST}:/home/${DEPLOY_USER}/frontend/.env
+    - ssh ${DEPLOY_USER}@${DEPLOY_HOST} "cd /home/${DEPLOY_USER}/frontend/; CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE docker compose pull"
+    - ssh ${DEPLOY_USER}@${DEPLOY_HOST} "cd /home/${DEPLOY_USER}/frontend/; CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE docker compose up -d"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "develop"
+  environment:
+    name: dev
+    on_stop: uninstall:frontend-dev
+
+uninstall:frontend-dev:
+  stage: to test
+  extends:
+    - .deploy_dev
+  script:
+    - ssh ${DEPLOY_USER}@${DEPLOY_HOST} "cd /home/${DEPLOY_USER}/frontend/ && docker compose down --volumes && cd .. && rm -rf frontend"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "develop"
+      when: manual
+  tags:
+    - docker
+  environment:
+    name: dev
+    action: stop

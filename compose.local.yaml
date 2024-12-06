@@ -1,0 +1,10 @@
+services:
+  server:
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+    environment:
+      NODE_ENV: dev
+    ports:
+      - 3000:80
